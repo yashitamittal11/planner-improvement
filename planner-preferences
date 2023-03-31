@@ -1,0 +1,226 @@
+// ==UserScript==
+// @name         Planner Preferences Highlighter
+// @namespace    https://schedule.happy.tools/
+// @version      0.5
+// @author       Yashita Mittal
+// @description  Highlight folks according to their chat preferences on the Planner page
+// @match        https://schedule.happy.tools/planner
+// @run-at       document-start
+// @downloadURL  https://github.com/Automattic/support-helper-tools/raw/main/happytools-enhancements/happyschedule-preferences-highlighter.user.js
+// @updateURL    https://github.com/Automattic/support-helper-tools/raw/main/happytools-enhancements/happyschedule-preferences-highlighter.user.js
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const optionValues = [
+        'Chat preference',
+        'Power-Chatter',
+        'Chatter',
+        'Reset'
+    ];
+
+    const heartColor = {
+            pinkColor: 'rgb(203, 16, 177)', // color of the pink hearts in the WPCOM planner view
+            blueColor: 'rgb(15, 32, 128)', // color of the blue heart in the WooCommerce planner view
+        };
+
+    const highlightColor = '#B2BEB5'; // Highlight color for the rows
+
+    const chatPreferenceOpt = document.createElement( 'select' );
+    chatPreferenceOpt.name = 'chat-preference';
+    chatPreferenceOpt.id = 'chat-preference';
+
+    // Create the select option dropdown HTML element
+    for ( const val of optionValues )
+    {
+        let option = document.createElement( 'option' );
+        option.value = val;
+        option.text = val.charAt( 0 ).toUpperCase() + val.slice( 1 );
+        chatPreferenceOpt.appendChild( option );
+    }
+
+    // Add disabled attribute to the placeholder "chat Preference" at the first position in the select dropdown
+    chatPreferenceOpt[ 0 ].setAttribute( 'disabled', 'disabled' );
+
+    //Apply styles to the select dropdown box
+    addStyle();
+
+    waitForElement();
+
+    // The script is loading before the Planner page fully loads. So adding an additional check to wait for the page elements to load.
+    function waitForElement() {
+
+        let timeout = -1; // Set the timeout to -1. We will use the value of timeout to clear the timeout
+
+        // Get the reference to the right toolbar group. We will insert the select option dropdown before this element.
+        let nav_items = document.querySelector( '.calendar-toolbar__subgroup' );
+
+        if( nav_items !== null ) {
+
+            // Get a reference to the parent node of Auto Schedule and Template tab
+            const parentDiv = nav_items.parentNode;
+            parentDiv.insertBefore( chatPreferenceOpt, nav_items ); // Insert the select option dropdown
+
+            //Get all the planner view blocks
+            const blocks = document.querySelectorAll( '.block-graph__row.planner__row' );
+
+            //Add data attribute to planner
+            addDataAttributetoPlannerView( blocks );
+
+            //Get all the HE aside blocks
+            const emp = document.querySelectorAll( '.block-graph__row-label' );
+
+            //Add data attribute to HE blocks
+            addDataAttributetoPlannerView( emp );
+
+            //attach an event listener to listen to dropdown option change
+            document.getElementById( 'chat-preference').addEventListener( 'change', highlightUsers(blocks, emp ) );
+
+            // If the timeout is set, clear it.
+            if ( timeout > 0 ) {
+                clearTimeout(timeout);
+            }
+        }
+        else{
+            // Wait for 1 second and again check if the page has loaded
+            timeout = setTimeout( waitForElement, 1000 );
+        }
+    } // waitForElement function ends
+
+    // Styling for the select dropdown box.
+    function addStyle() {
+
+        const css_chatpreference = `#chat-preference {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 7px 8px;
+        margin-right: 12px;
+        border: 1px solid var(--color-border-light);
+        border-radius: 3px;
+        background: transparent;
+        color: var(--color-text-medium);
+        min-width: 0;
+        box-shadow: none;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        }
+        `;
+
+        let style = document.createElement( 'style' );
+        style.type = 'text/css';
+        style.appendChild( document.createTextNode( css_chatpreference) );
+        document.head.appendChild( style );
+    }
+
+    /*
+     * This function adds data-count data attribute to aside HE names and the planner rows on the right.
+     * This is required as there is no co-relation between HE names and the planner rows.
+     * We use this co-relation to highlight the rows based on the chat preference selected
+     * from the select dropdown in the taskbar.
+     */
+    function addDataAttributetoPlannerView( blocks ) {
+
+        // Get the list of all the planner blocks
+        let count= 1;
+
+        blocks.forEach( function( element ) {
+            element.dataset.count = count++;
+        });
+    }
+
+    /*
+     * Add power-chatter/chatter classes to HEs based on their chat preference.
+     * We will highlight the HEs based on the chat preference selected from the Chat Preference dropdown using these classes.
+     */
+    function addChatPreferenceClasses( emp ) {
+
+        // Add chatter, chat or tickets class to each HE based on their preferences
+        emp.forEach( currentValue => {
+            const preferences = currentValue.querySelector( '.preferences-string__item:nth-of-type(1)' );
+
+            // Power chatters have 2 span child nodes for double hearts
+            if ( preferences.childNodes.length > 1 ) {
+                currentValue.classList.add( 'power-chatter' );
+            }
+            else if ( preferences.style.color === heartColor.pinkColor || preferences.style.color === heartColor.blueColor) {
+                currentValue.classList.add( 'chatter' );
+            }
+        } );
+    }
+
+    // Highlights users based on the option selected in the Preference dropdown box
+    function highlightUsers( blocks, emp ) {
+
+        // Returning the code in a function as highlightUsers is a callback function with arguments
+        return function() {
+
+            //Reset the colors when user preferences change.
+            resetColors( blocks, emp );
+
+           // const highlightColor = '#B2BEB5';
+            const userPreference = this.value.toLowerCase(); // Option selected in user preference dropdown
+
+            // If user selected Reset option from the select dropdown, return
+            if ( userPreference === 'reset' ) {
+                // Reset the value of the select option dropdown to initial value (Chat Preference)
+                const select = document.querySelector( '#chat-preference' );
+                select[ 0 ].selected = true;
+                resetColors( blocks, emp);
+                return;
+            }
+
+            // Add chat/powerchat preference classes to the planner rows. We will color code the rows based on these classes
+            addChatPreferenceClasses( emp );
+
+            const numOfRows = blocks.length;
+
+            if ( blocks !== null && emp !== null ) {
+                for( let i = 0; i < numOfRows; i++ ) {
+
+                    /*
+                     * We have added data-count data attribute to the aside employees and the planner rows to relate them.
+                     * The loop below checks if the data attribute is same for the aside employee column and the planner view.
+                     * If it matches, then we check if the row contains the power-chatter or chatter class, we highlight those
+                     * rows based on the option selected in the select dropdown.
+                    */
+                    if ( (blocks[ i ].dataset.count === emp[ i ].dataset.count) && emp[ i ].classList.contains( userPreference ) ) {
+                        blocks[ i ].style.backgroundColor = highlightColor;
+                    }
+                }
+            }
+        }
+    }
+
+    //Remove the colors from the planner when the user preferences changes from the select dropdown.
+    function resetColors( plannerBlocks, emp ) {
+
+        //Iterate through all the rows of the planner and remove the background color
+        if ( plannerBlocks !== null && emp !== null ) {
+            plannerBlocks.forEach( block => {
+                block.style.backgroundColor = '#eef0f3';
+            })
+        }
+
+        // Remove the chat classes from the aside employees
+        if ( emp != null ) {
+
+            // Add chatter, chat or tickets class to each employee based on their preferences
+            emp.forEach( currentValue => {
+
+                const preferences = currentValue.querySelector( '.preferences-string__item:nth-of-type(1)' );
+
+                // Power chatters have 2 span child nodes for double hearts
+                if ( preferences.childNodes.length > 1 ) {
+                    currentValue.classList.remove( 'power-chatter' );
+                }
+                else if ( preferences.style.color === heartColor.pinkColor || preferences.style.color === heartColor.blueColor ) {
+                    currentValue.classList.remove( 'chatter' );
+                }
+            } ); // foreach ends
+        }
+    }
+
+})();
